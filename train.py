@@ -11,6 +11,7 @@ from utils import (
     preprocess_string,
     build_tokenizer_table,
     build_output_tables,
+    prefix_match
 )
 
 import model as md
@@ -31,7 +32,7 @@ def setup_dataloader(args):
 
     # Hint: use the helper functions provided in utils.py
     # ===================================================== #
-    file = open("../CSCI499_NaturalLanguageforInteractiveAI/hw3/lang_to_sem_data.json")
+    file = open("lang_to_sem_data.json")
     jsonLang = json.load(file)
     trainUntoken = jsonLang["train"]
     valUntoken = jsonLang["valid_seen"]
@@ -43,13 +44,15 @@ def setup_dataloader(args):
 
     trainEncoded = list()
     trainOut = list()
+    maxEpisodeLen = 0
+    maxAct = 0
     for series in trainUntoken:  # each set of commands/labels
         commandTemp = list()
         commandTemp.append(v2i["<start>"])
         actionTemp = list()
-        actionTemp.append(v2i["<start>"])
+        actionTemp.append(a2i["<start>"])
         targetTemp = list()
-        targetTemp.append(v2i["<start>"])
+        targetTemp.append(t2i["<start>"])
         for example in series:  # each pair of command and labels
             temp = preprocess_string(example[0])
             encodingTemp = list()
@@ -58,35 +61,53 @@ def setup_dataloader(args):
                 word = word.lower()
                 if len(word) > 0:
                     if word in v2i:
-                        encodingTemp.append(v2i[word])
+                        commandTemp.append(v2i[word])
                     else:
-                        encodingTemp.append(v2i["<unk>"])
+                        commandTemp.append(v2i["<unk>"])
                     if len(encodingTemp) == maxLen - 1:
                         break
             # by the time you're out here, have looked at every word in this command
-            commandTemp.append(encodingTemp)
+            # commandTemp.append(encodingTemp)
             actionTemp.append(a2i[example[1][0]])
             targetTemp.append(t2i[example[1][1]])
         # once you're here, done looping through a set of commands, now to finalize the command/ action/ target temps
         # and then add them to the final things
         commandTemp.append(v2i["<end>"])
-        actionTemp.append(v2i["<end>"])
-        targetTemp.append(v2i["<end>"])
+        actionTemp.append(a2i["<end>"])
+        targetTemp.append(t2i["<end>"])
 
-        # add them in
-        trainEncoded.append(" ".join(commandTemp))
-        trainOut.append([" ".join(actionTemp), " ".join(targetTemp)])
+        if len(commandTemp) > maxEpisodeLen:
+            maxEpisodeLen = len(commandTemp)
+        if len(actionTemp) > maxAct:
+            maxAct = len(actionTemp)
 
+        trainEncoded.append(commandTemp)
+        testing = [actionTemp, targetTemp]
+        trainOut.append(testing)
+
+    # making everything the same length
+    # print(trainEncoded)
+    for e in trainEncoded:
+        while len(e) < maxEpisodeLen:
+            e.append(0)
+
+    for e in trainOut:
+        while len(e[0]) < maxAct:
+            e[0].append(0)
+        while len(e[1]) < maxAct:
+            e[1].append(0)
 
     valEncoded = list()
     valOut = list()
+    maxEpisodeLen = 0
+    maxAct = 0
     for series in valUntoken:  # each set of commands/labels
         commandTemp = list()
         commandTemp.append(v2i["<start>"])
         actionTemp = list()
-        actionTemp.append(v2i["<start>"])
+        actionTemp.append(a2i["<start>"])
         targetTemp = list()
-        targetTemp.append(v2i["<start>"])
+        targetTemp.append(t2i["<start>"])
         for example in series:  # each pair of command and labels
             temp = preprocess_string(example[0])
             encodingTemp = list()
@@ -95,24 +116,39 @@ def setup_dataloader(args):
                 word = word.lower()
                 if len(word) > 0:
                     if word in v2i:
-                        encodingTemp.append(v2i[word])
+                        commandTemp.append(v2i[word])
                     else:
-                        encodingTemp.append(v2i["<unk>"])
+                        commandTemp.append(v2i["<unk>"])
                     if len(encodingTemp) == maxLen - 1:
                         break
             # by the time you're out here, have looked at every word in this command
-            commandTemp.append(encodingTemp)
+            # commandTemp.append(encodingTemp)
             actionTemp.append(a2i[example[1][0]])
             targetTemp.append(t2i[example[1][1]])
         # once you're here, done looping through a set of commands, now to finalize the command/ action/ target temps
         # and then add them to the final things
         commandTemp.append(v2i["<end>"])
-        actionTemp.append(v2i["<end>"])
-        targetTemp.append(v2i["<end>"])
+        actionTemp.append(a2i["<end>"])
+        targetTemp.append(t2i["<end>"])
 
-        # add them in
-        valEncoded.append(" ".join(commandTemp))
-        valOut.append([" ".join(actionTemp), " ".join(targetTemp)])
+        if len(commandTemp) > maxEpisodeLen:
+            maxEpisodeLen = len(commandTemp)
+        if len(actionTemp) > maxAct:
+            maxAct = len(actionTemp)
+
+        valEncoded.append(commandTemp)
+        valOut.append([actionTemp, targetTemp])
+
+    # making everything the same length
+    # print(trainEncoded)
+    for e in valEncoded:
+        while len(e) < maxEpisodeLen:
+            e.append(0)
+    for e in valOut:
+        while len(e[0]) < maxAct:
+            e[0].append(0)
+        while len(e[1]) < maxAct:
+            e[1].append(0)
 
     # converting the lists into np arrays
     trainEncoded = np.array(trainEncoded)
@@ -149,6 +185,9 @@ def setup_model(args):
     # forcing mechanism in the forward pass such that instead
     # of feeding the model prediction into the recurrent model,
     # you will give the embedding of the target token.
+
+    # e.g. Input: "Walk straight, turn left to the counter. Put the knife on the table."
+    # Output: [(GoToLocation, diningtable), (PutObject, diningtable)]
     # ===================================================== #
     model = md.EncoderDecoder()
     return model
@@ -217,10 +256,15 @@ def train_epoch(
             optimizer.step()
 
         """
-        # TODO: write code to compute the accuracy of your model predictions
-        # by comparing the predicted logits against the ground truth labels
+        # TODO: implement code to compute some other metrics between your predicted sequence
+        # of (action, target) labels vs the ground truth sequence. We already provide 
+        # exact match and prefix exact match. You can also try to compute longest common subsequence.
+        # Feel free to change the input to these functions.
         """
-        acc = None
+        # TODO: add code to log these metrics
+        em = output == labels
+        prefix_em = prefix_em(output, labels)
+        acc = 0.0
 
         # logging
         epoch_loss += loss.item()

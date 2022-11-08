@@ -46,8 +46,8 @@ def build_tokenizer_table(train, vocab_size=1000):
             padded_lens.append(padded_len)
     corpus = Counter(word_list)
     corpus_ = sorted(corpus, key=corpus.get, reverse=True)[
-        : vocab_size - 4
-    ]  # save room for <pad>, <start>, <end>, and <unk>
+              : vocab_size - 4
+              ]  # save room for <pad>, <start>, <end>, and <unk>
     vocab_to_index = {w: i + 4 for i, w in enumerate(corpus_)}
     vocab_to_index["<pad>"] = 0
     vocab_to_index["<start>"] = 1
@@ -69,8 +69,30 @@ def build_output_tables(train):
             a, t = outseq
             actions.add(a)
             targets.add(t)
-    actions_to_index = {a: i for i, a in enumerate(actions)}
-    targets_to_index = {t: i for i, t in enumerate(targets)}
+    actions_to_index = {a: i + 3 for i, a in enumerate(actions)}
+    targets_to_index = {t: i + 3 for i, t in enumerate(targets)}
+    actions_to_index["<pad>"] = 0
+    actions_to_index["<start>"] = 1
+    actions_to_index["<end>"] = 2
+    targets_to_index["<pad>"] = 0
+    targets_to_index["<start>"] = 1
+    targets_to_index["<end>"] = 2
     index_to_actions = {actions_to_index[a]: a for a in actions_to_index}
     index_to_targets = {targets_to_index[t]: t for t in targets_to_index}
     return actions_to_index, index_to_actions, targets_to_index, index_to_targets
+
+
+def prefix_match(predicted_labels, gt_labels):
+    # predicted and gt are sequences of (action, target) labels, the sequences should be of same length
+    # computes how many matching (action, target) labels there are between predicted and gt
+    # is a number between 0 and 1
+
+    seq_length = len(gt_labels)
+
+    for i in range(seq_length):
+        if predicted_labels[i] != gt_labels[i]:
+            break
+
+    pm = (1.0 / seq_length) * i
+
+    return pm
