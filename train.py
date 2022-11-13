@@ -5,6 +5,7 @@ import argparse
 from sklearn.metrics import accuracy_score
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 
 from utils import (
     get_device,
@@ -164,7 +165,7 @@ def setup_dataloader(args):
     return train_loader, val_loader
 
 
-def setup_model(args):
+def setup_model(args, ep_len, numAct, numTar):
     """
     return:
         - model: YourOwnModelClass
@@ -189,7 +190,7 @@ def setup_model(args):
     # e.g. Input: "Walk straight, turn left to the counter. Put the knife on the table."
     # Output: [(GoToLocation, diningtable), (PutObject, diningtable)]
     # ===================================================== #
-    model = md.EncoderDecoder()
+    model = md.EncoderDecoder(ep_len, 128, numAct, numTar)
     return model
 
 
@@ -203,7 +204,7 @@ def setup_optimizer(args, model):
     # Task: Initialize the loss function for action predictions
     # and target predictions. Also initialize your optimizer.
     # ===================================================== #
-    criterion = torch.nn.CrossEntropyLoss()  # fixme is it okay to only have one?
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=0)  # fixme is it okay to only have one? what?
     optimizer = None
 
     return criterion, optimizer
@@ -239,13 +240,13 @@ def train_epoch(
 
     # iterate over each batch in the dataloader
     # NOTE: you may have additional outputs from the loader __getitem__, you can modify this
-    for (inputs, labels) in loader:
+    for (inputs, labels) in loader:  # ~158
         # put model inputs to device
         inputs, labels = inputs.to(device), labels.to(device)
 
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
-        output = model(inputs, labels)
+        output = model(inputs, labels)  # starts 163
 
         loss = criterion(output.squeeze(), labels[:, 0].long())
 
@@ -263,8 +264,8 @@ def train_epoch(
         """
         # TODO: add code to log these metrics
         em = output == labels
-        prefix_em = prefix_em(output, labels)
-        acc = 0.0
+        prefix_em = prefix_match(output, labels)
+        acc = prefix_em  # fixme would you rather do something else?
 
         # logging
         epoch_loss += loss.item()
@@ -301,6 +302,13 @@ def train(args, model, loaders, optimizer, criterion, device):
     # weights via backpropagation
     model.train()
 
+    # Loss
+    trainLossTracker = list()
+    valLossTracker = list()
+
+    # Accuracy
+    valAccTracker = list()
+
     for epoch in tqdm.tqdm(range(args.num_epochs)):
 
         # train single epoch
@@ -313,6 +321,7 @@ def train(args, model, loaders, optimizer, criterion, device):
             criterion,
             device,
         )
+        trainLossTracker.append(train_loss)
 
         # some logging
         print(f"train loss : {train_loss}")
@@ -331,12 +340,37 @@ def train(args, model, loaders, optimizer, criterion, device):
             )
 
             print(f"val loss : {val_loss} | val acc: {val_acc}")
+            # Adding data to log to graph later
+            valLossTracker.append(val_loss)
+            valAccTracker.append(val_acc)
 
     # ================== TODO: CODE HERE ================== #
     # Task: Implement some code to keep track of the model training and
     # evaluation loss. Use the matplotlib library to plot
     # 3 figures for 1) training loss, 2) validation loss, 3) validation accuracy
     # ===================================================== #
+
+    trainingN = np.arange(len(trainTLossTracker))  # how many training data points do I have?
+    # graph for Training Loss
+    plt.figure(1)
+    plt.plot(trainingN, trainLossTracker)
+    plt.legend()
+    plt.title("Training Loss")
+
+    valN = np.arange(len(valLossTracker))  # how many validation data points do I have?
+    # graph for validation loss
+    plt.figure(2)
+    plt.plot(valN, valLossTracker)
+    plt.legend()
+    plt.title("Validation Loss")
+
+    # graph for validation accuracy
+    plt.figure(3)
+    plt.plot(valN, valAccTracker)
+    plt.legend()
+    plt.title("Validation Accuracy")
+
+    plt.show()
 
 
 def main(args):
