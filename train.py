@@ -156,16 +156,17 @@ def setup_dataloader(args):
     trainOut = np.array(trainOut)
     valEncoded = np.array(valEncoded)
     valOut = np.array(valOut)
-
+    print("in setup", trainOut.shape)
+    print(trainOut)
     trainDS = torch.utils.data.TensorDataset(torch.from_numpy(trainEncoded), torch.from_numpy(trainOut))
     valDS = torch.utils.data.TensorDataset(torch.from_numpy(valEncoded), torch.from_numpy(valOut))
     train_loader = torch.utils.data.DataLoader(trainDS, shuffle=True, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(valDS, shuffle=True, batch_size=args.batch_size)
+    print("max act", maxAct)
+    return train_loader, val_loader, maxEpisodeLen, len(a2i), len(t2i), maxAct, len(v2i)
 
-    return train_loader, val_loader
 
-
-def setup_model(args, ep_len, numAct, numTar):
+def setup_model(args, ep_len, numAct, numTar, numPred, numWords):
     """
     return:
         - model: YourOwnModelClass
@@ -190,7 +191,8 @@ def setup_model(args, ep_len, numAct, numTar):
     # e.g. Input: "Walk straight, turn left to the counter. Put the knife on the table."
     # Output: [(GoToLocation, diningtable), (PutObject, diningtable)]
     # ===================================================== #
-    model = md.EncoderDecoder(ep_len, 128, numAct, numTar)
+    # ep_len + 109, 128, numAct, numTar, numPred)
+    model = md.EncoderDecoder(2, numAct, numTar, numPred, 128, numWords)
     return model
 
 
@@ -205,7 +207,7 @@ def setup_optimizer(args, model):
     # and target predictions. Also initialize your optimizer.
     # ===================================================== #
     criterion = torch.nn.CrossEntropyLoss(ignore_index=0)  # fixme is it okay to only have one? what?
-    optimizer = None
+    optimizer = torch.optim.Adam(model.parameters(), lr=.05)
 
     return criterion, optimizer
 
@@ -246,26 +248,33 @@ def train_epoch(
 
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
-        output = model(inputs, labels)  # starts 163
+        actOut, tarOut = model(inputs, labels)  # fixme
 
-        loss = criterion(output.squeeze(), labels[:, 0].long())
+        print(actOut.shape)
+        print(labels[:,0]. shape)
+        actLoss = criterion(actOut.squeeze(), labels[:, 0].long())
+        tarLoss = criterion(actOut.squeeze(), labels[:, 1].long())
+        loss = actLoss + tarLoss
 
         # step optimizer and compute gradients during training
         if training:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            acc = 0
+        else:  # only for validation
+            """
+            # TODO: implement code to compute some other metrics between your predicted sequence
+            # of (action, target) labels vs the ground truth sequence. We already provide 
+            # exact match and prefix exact match. You can also try to compute longest common subsequence.
+            # Feel free to change the input to these functions.
+            """
+            # TODO: add code to log these metrics
+            # for e in actOut:
 
-        """
-        # TODO: implement code to compute some other metrics between your predicted sequence
-        # of (action, target) labels vs the ground truth sequence. We already provide 
-        # exact match and prefix exact match. You can also try to compute longest common subsequence.
-        # Feel free to change the input to these functions.
-        """
-        # TODO: add code to log these metrics
-        em = output == labels
-        prefix_em = prefix_match(output, labels)
-        acc = prefix_em  # fixme would you rather do something else?
+            em = output == labels
+            prefix_em = prefix_match(output, labels)
+            acc = prefix_em  # fixme would you rather do something else?
 
         # logging
         epoch_loss += loss.item()
@@ -350,7 +359,7 @@ def train(args, model, loaders, optimizer, criterion, device):
     # 3 figures for 1) training loss, 2) validation loss, 3) validation accuracy
     # ===================================================== #
 
-    trainingN = np.arange(len(trainTLossTracker))  # how many training data points do I have?
+    trainingN = np.arange(len(trainLossTracker))  # how many training data points do I have?
     # graph for Training Loss
     plt.figure(1)
     plt.plot(trainingN, trainLossTracker)
@@ -377,11 +386,11 @@ def main(args):
     device = get_device(args.force_cpu)
 
     # get dataloaders
-    train_loader, val_loader, maps = setup_dataloader(args)
+    train_loader, val_loader, episode_len, numActions, numTargets, numPred, numWords = setup_dataloader(args)
     loaders = {"train": train_loader, "val": val_loader}
 
     # build model
-    model = setup_model(args, maps, device)
+    model = setup_model(args, episode_len, numActions, numTargets, numPred, numWords)
     print(model)
 
     # get optimizer and loss functions
