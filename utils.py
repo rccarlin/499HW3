@@ -90,7 +90,9 @@ def prefix_match(predicted_labels, gt_labels):
     seq_length = len(gt_labels)
 
     for i in range(seq_length):
-        if predicted_labels[i] != gt_labels[i]:
+        tempPred = (predicted_labels[i][0], predicted_labels[i][1])
+        tempGT = (gt_labels[i][0], gt_labels[i][1])
+        if tempPred != tempGT:
             break
 
     pm = (1.0 / seq_length) * i

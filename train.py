@@ -86,22 +86,10 @@ def setup_dataloader(args):
         testing = [actionTemp, targetTemp]
         trainOut.append(testing)
 
-    # making everything the same length
-    # print(trainEncoded)
-    for e in trainEncoded:
-        while len(e) < maxEpisodeLen:
-            e.append(0)
-
-    for e in trainOut:
-        while len(e[0]) < maxAct:
-            e[0].append(0)
-        while len(e[1]) < maxAct:
-            e[1].append(0)
-
     valEncoded = list()
     valOut = list()
-    maxEpisodeLen = 0
-    maxAct = 0
+    # maxEpisodeLen = 0
+    # maxAct = 0
     for series in valUntoken:  # each set of commands/labels
         commandTemp = list()
         commandTemp.append(v2i["<start>"])
@@ -142,6 +130,16 @@ def setup_dataloader(args):
 
     # making everything the same length
     # print(trainEncoded)
+    for e in trainEncoded:
+        while len(e) < maxEpisodeLen:
+            e.append(0)
+
+    for e in trainOut:
+        while len(e[0]) < maxAct:
+            e[0].append(0)
+        while len(e[1]) < maxAct:
+            e[1].append(0)
+
     for e in valEncoded:
         while len(e) < maxEpisodeLen:
             e.append(0)
@@ -156,13 +154,13 @@ def setup_dataloader(args):
     trainOut = np.array(trainOut)
     valEncoded = np.array(valEncoded)
     valOut = np.array(valOut)
-    print("in setup", trainOut.shape)
-    print(trainOut)
+    # print("in setup", trainOut.shape)
+    # print(trainOut)
     trainDS = torch.utils.data.TensorDataset(torch.from_numpy(trainEncoded), torch.from_numpy(trainOut))
     valDS = torch.utils.data.TensorDataset(torch.from_numpy(valEncoded), torch.from_numpy(valOut))
     train_loader = torch.utils.data.DataLoader(trainDS, shuffle=True, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(valDS, shuffle=True, batch_size=args.batch_size)
-    print("max act", maxAct)
+    # print("max act", maxAct)
     return train_loader, val_loader, maxEpisodeLen, len(a2i), len(t2i), maxAct, len(v2i)
 
 
@@ -250,10 +248,10 @@ def train_epoch(
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
         actOut, tarOut = model(inputs, labels)  # fixme
 
-        print(actOut.shape)
-        print(labels[:,0]. shape)
+        # print(actOut.shape)
+        # print(labels[:,0]. shape)
         actLoss = criterion(actOut.squeeze(), labels[:, 0].long())
-        tarLoss = criterion(actOut.squeeze(), labels[:, 1].long())
+        tarLoss = criterion(tarOut.squeeze(), labels[:, 1].long())
         loss = actLoss + tarLoss
 
         # step optimizer and compute gradients during training
@@ -262,7 +260,8 @@ def train_epoch(
             loss.backward()
             optimizer.step()
             acc = 0
-        else:  # only for validation
+            epoch_acc = 0
+        else:  # only for validation fixme back to else
             """
             # TODO: implement code to compute some other metrics between your predicted sequence
             # of (action, target) labels vs the ground truth sequence. We already provide 
@@ -270,15 +269,26 @@ def train_epoch(
             # Feel free to change the input to these functions.
             """
             # TODO: add code to log these metrics
-            # for e in actOut:
+            output = list()
+            # predActTemp = np.argmax(actOut, axis=1)
+            # predTarOut = np.argmax(tarOut, axis=1)
+            for e in range(len(labels)):
+                predActTemp = torch.argmax(actOut[e], dim=0)
+                predTarTemp = torch.argmax(tarOut[e], dim=0)
+                togetherTemp = torch.stack((predActTemp, predTarTemp))
+                output.append(togetherTemp)
+
+            output = torch.stack(output)
 
             em = output == labels
-            prefix_em = prefix_match(output, labels)
-            acc = prefix_em  # fixme would you rather do something else?
+            prefix_em = 0
+            for e in range(len(labels)):  # for each episode's actions and targets
+                prefix_em = prefix_match(output[e], labels[e])
+            acc = prefix_em / len(labels)  # average
+            epoch_acc += acc
 
         # logging
         epoch_loss += loss.item()
-        epoch_acc += acc.item()
 
     epoch_loss /= len(loader)
     epoch_acc /= len(loader)
@@ -319,7 +329,6 @@ def train(args, model, loaders, optimizer, criterion, device):
     valAccTracker = list()
 
     for epoch in tqdm.tqdm(range(args.num_epochs)):
-
         # train single epoch
         # returns loss for action and target prediction and accuracy
         train_loss, train_acc = train_epoch(

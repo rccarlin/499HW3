@@ -75,9 +75,9 @@ class EncoderDecoder(nn.Module):
     def forward(self, ins, outs):  # is given one batch
 
         numEp = len(ins)  # hopefully this will tell me the current batch size
-        actions = np.zeros((numEp, self.numAct, self.numPred))
-        targets = np.zeros((numEp, self.numTar, self.numPred))
-        initialEnc = (np.zeros((numEp, self.hidDim)), np.zeros((numEp, self.hidDim)) )  # I hope this is the correct shape, may supposed to do ep_len instead
+        actions = torch.zeros((numEp, self.numAct, self.numPred))
+        targets = torch.zeros((numEp, self.numTar, self.numPred))
+        initialEnc = (np.zeros((numEp, self.hidDim)), np.zeros((numEp, self.hidDim)))  # I hope this is the correct shape, may supposed to do ep_len instead
         hidEnc = self.encoder(ins, initialEnc)
         #torch.set_printoptions(profile="full")
 
@@ -86,8 +86,8 @@ class EncoderDecoder(nn.Module):
         for p in range(self.numPred):
             tempact = self.actFCL(hidDec[0])
             tempTar = self.tarFCL(hidDec[0])
-            actions[:, :, p] = tempact.detach()
-            targets[:, :, p] = tempTar.detach()
+            actions[:, :, p] = tempact
+            targets[:, :, p] = tempTar
 
             # make one hot
             oneHotOut = np.zeros((numEp,94))  # 94 is numAct + numTar... I hope
@@ -106,7 +106,6 @@ class EncoderDecoder(nn.Module):
             # input to any lstm is batch x N x 1 x hidden
             # hidden state expected B x 1 x hidden
 
-        print(self.numPred)
-        return torch.from_numpy(actions), torch.from_numpy(targets)
+        return actions, targets
         # fixme it's only expecting one, figure out what to do instead
     # fixme, only do accuracy in the validation, do argmax?. flip input. set seq length  of actions to 3
