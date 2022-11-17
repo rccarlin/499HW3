@@ -87,14 +87,63 @@ def prefix_match(predicted_labels, gt_labels):
     # computes how many matching (action, target) labels there are between predicted and gt
     # is a number between 0 and 1
 
-    seq_length = len(gt_labels)
+    seq_length = len(gt_labels[0])
 
     for i in range(seq_length):
-        tempPred = (predicted_labels[i][0], predicted_labels[i][1])
-        tempGT = (gt_labels[i][0], gt_labels[i][1])
+        tempPred = (predicted_labels[0][i], predicted_labels[1][i])
+        tempGT = (gt_labels[0][i], gt_labels[1][i])
         if tempPred != tempGT:
             break
 
     pm = (1.0 / seq_length) * i
 
     return pm
+
+# returns the len(longest common substring that starts at the same index because recursion will take too long) / seq
+def modLCS(pred, actual):
+    # both predicted and actual are 2 x # to predict
+    # because I call the shots around here
+    lcs = 0
+    i = 0
+    length = 0
+    while i < len(pred[0]):
+        if actual[0][i] == 0 and pred[0][i] == 0:  # padding, we don't want to consider this or anything after
+            break
+        if pred[0][i] == actual[0][i] and pred[1][i] == actual[1][i]:
+            length += 1
+        else:  # broke streak
+            if length > lcs:
+                lcs = length
+            length = 0
+
+    return (1.0 / (i-1)) * lcs  # do i-1 instead of sequence length because sequence length includes padding, and that's
+    # not fair to consider. if padding starts at i, we want to go back one
+
+
+# returns %  in common (at exact same index)
+# ignores padding
+def samePlace(pred, actual):
+    # again, assuming pred and actual are 2 x seq_len
+
+    seq_len = len(pred[0])
+    numSame = 0
+    i = 0
+    for i in range(seq_len):
+        if actual[0][i] == 0 and pred[0][i] == 0:  # padding, nothing after this matters
+            break
+        if pred[0][i] == actual[0][i] and pred[1][i] == actual[1][i]:
+            numSame += 1
+    return numSame / (i-1)
+
+# returns % of predictions that at least get the action or target correct
+def youTried(pred, actual):
+    # same shape assumptions
+    seq_len = len(pred[0])
+    numClose = 0
+    i = 0
+    for i in range(seq_len):
+        if actual[0][i] == 0 and pred[0][i] == 0:  # padding
+            break
+        if pred[0][i] == actual[0][i] or pred[1][i] == actual[1][i]:
+            numClose += 1
+    return numClose / (i-1)

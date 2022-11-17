@@ -160,7 +160,6 @@ def setup_dataloader(args):
     valDS = torch.utils.data.TensorDataset(torch.from_numpy(valEncoded), torch.from_numpy(valOut))
     train_loader = torch.utils.data.DataLoader(trainDS, shuffle=True, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(valDS, shuffle=True, batch_size=args.batch_size)
-
     return train_loader, val_loader, maxEpisodeLen, len(a2i), len(t2i), maxAct, len(v2i)
 
 
@@ -268,20 +267,19 @@ def train_epoch(
             """
             # TODO: add code to log these metrics
             output = list()
-            # predActTemp = np.argmax(actOut, axis=1)
-            # predTarOut = np.argmax(tarOut, axis=1)
             for e in range(len(labels)):
                 predActTemp = torch.argmax(actOut[e], dim=0)
                 predTarTemp = torch.argmax(tarOut[e], dim=0)
                 togetherTemp = torch.stack((predActTemp, predTarTemp))
                 output.append(togetherTemp)
-
             output = torch.stack(output)
 
             em = output == labels
             prefix_em = 0
             for e in range(len(labels)):  # for each episode's actions and targets
                 prefix_em = prefix_match(output[e], labels[e])
+                # or
+                # prefix_em = modLCS(output[e], labels[e]), or any of the others I wrote
             acc = prefix_em / len(labels)  # average
             epoch_acc += acc
 
