@@ -203,7 +203,7 @@ def setup_optimizer(args, model):
     # Task: Initialize the loss function for action predictions
     # and target predictions. Also initialize your optimizer.
     # ===================================================== #
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=0)  # fixme is it okay to only have one? what?
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=0)
     optimizer = torch.optim.Adam(model.parameters(), lr=.05)
 
     return criterion, optimizer

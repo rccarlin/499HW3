@@ -22,7 +22,7 @@ class Encoder(nn.Module):
         embeds = self.embedding(x)
         # allOut, hid = self.lstm(x.view(x.shape[0], x.shape[1], self.inDim))
         allOut, hid = self.lstm(embeds)
-        return hid  # fixme make sure we don't need to do a max?
+        return hid
 
 
 
@@ -62,7 +62,7 @@ class EncoderDecoder(nn.Module):
         self.hidDim = hidDim
         self.encoder = Encoder(hidDim, embedDim, numWords)
         self.decoder = Decoder(hidDim, embedDim, numAct + numTar)
-        self.actFCL = nn.Linear(numAct + numTar, numAct)  # FIXME what dimensions
+        self.actFCL = nn.Linear(numAct + numTar, numAct)
         self.tarFCL = nn.Linear(numAct + numTar, numTar)
         self.flatten = nn.Linear(hidDim, 1)
         self.numPred = numPred
