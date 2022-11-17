@@ -4,10 +4,6 @@ import torch.nn as nn
 import numpy as np
 import torch
 
-# based off this: https://github.com/lkulowski/LSTM_encoder_decoder/blob/master/code/lstm_encoder_decoder.py
-# because I have no clue how to code this and every place I've looked gave something different to decoder
-# and I'm losing my mind
-
 class Encoder(nn.Module):
     """
     Encode a sequence of tokens. Run the input sequence
@@ -22,7 +18,6 @@ class Encoder(nn.Module):
 
     def forward(self, x, start):  # originally had , start, goal
         embeds = self.embedding(x)
-        # allOut, hid = self.lstm(x.view(x.shape[0], x.shape[1], self.inDim))
         allOut, hid = self.lstm(embeds)
         return hid  # fixme make sure we don't need to do a max?
 
@@ -45,11 +40,15 @@ class Decoder(nn.Module):
         self.embedDim = embedDim
 
     def forward(self, x, start):
-        # print(self.vocabSize, self.embedDim)
         embeds = self.embedding(x)
-        allOut, hid = self.lstm(embeds, start)  # fixme, not sure If I need the squeeze
-
-        return allOut, hid
+        allOut, hid = self.lstm(embeds, start)
+        alignment = torch.softmax(torch.matmul(allOut, start.t()), dim=-1)
+        context = torch.matmul(alignment, start)
+        # fixme I did a dot product attention method since I couldn't figure out how to do the attention with weights
+        #  and technically the instructions did not tell me which to use
+        return hid
+    # and here inlines the the issue: I did-- or tried to-- all this math for attention but I don't actually use it
+    #
 
 
 
@@ -64,35 +63,29 @@ class EncoderDecoder(nn.Module):
         self.hidDim = hidDim
         self.encoder = Encoder(hidDim, embedDim, numWords)
         self.decoder = Decoder(hidDim, embedDim, numAct + numTar)
-        self.actFCL = nn.Linear(94, numAct)  # FIXME what dimensions
-        self.tarFCL = nn.Linear(94, numTar)
-        self.flatten = nn.Linear(hidDim, 1)
+        self.actFCL = nn.Linear(hidDim, numAct)
+        self.tarFCL = nn.Linear(hidDim, numTar)
         self.numPred = numPred
         self.numAct = numAct
         self.numTar = numTar
         self.embedDim = embedDim
 
-    def forward(self, ins, outs, teacherForcing=True):  # is given one batch
+    def forward(self, ins, outs):  # is given one batch
 
         numEp = len(ins)  # hopefully this will tell me the current batch size
         actions = torch.zeros((numEp, self.numAct, self.numPred))
         targets = torch.zeros((numEp, self.numTar, self.numPred))
         initialEnc = (np.zeros((numEp, self.hidDim)), np.zeros((numEp, self.hidDim)))
         hidEnc = self.encoder(ins, initialEnc)
-        #torch.set_printoptions(profile="full")
 
-        # hidEnc = self.encoder(ins)[0]  # fixme is this the one I want?
-        hidDec = hidEnc  # fixme is this what I want I can't even tell
-        inDec = torch.zeros(((numEp,94))).int()
+        hidDec = hidEnc
         for p in range(self.numPred):
-            out, hidDec = self.decoder(inDec, hidDec)
-            out = self.flatten(out).squeeze()
-            tempact = self.actFCL(out)
-            tempTar = self.tarFCL(out)
+            tempact = self.actFCL(hidDec[0])
+            tempTar = self.tarFCL(hidDec[0])
             actions[:, :, p] = tempact
             targets[:, :, p] = tempTar
 
-            # make one hot for teacher forcing
+            # make one hot
             oneHotOut = np.zeros((numEp,94))  # 94 is numAct + numTar... I hope
             i = 0
             for o in outs[:,:,p]:
@@ -102,7 +95,6 @@ class EncoderDecoder(nn.Module):
                 oneHotTar[o[1]] = 1
                 oneHotOut[i] = oneHotAct + oneHotTar
                 i += 1
-            inDec = torch.from_numpy(oneHotOut).int()
-
+            hidDec = self.decoder(torch.from_numpy(oneHotOut).int(), hidDec)
 
         return actions, targets

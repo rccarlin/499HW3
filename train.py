@@ -154,13 +154,12 @@ def setup_dataloader(args):
     trainOut = np.array(trainOut)
     valEncoded = np.array(valEncoded)
     valOut = np.array(valOut)
-    # print("in setup", trainOut.shape)
-    # print(trainOut)
+
     trainDS = torch.utils.data.TensorDataset(torch.from_numpy(trainEncoded), torch.from_numpy(trainOut))
     valDS = torch.utils.data.TensorDataset(torch.from_numpy(valEncoded), torch.from_numpy(valOut))
     train_loader = torch.utils.data.DataLoader(trainDS, shuffle=True, batch_size=args.batch_size)
     val_loader = torch.utils.data.DataLoader(valDS, shuffle=True, batch_size=args.batch_size)
-    # print("max act", maxAct)
+
     return train_loader, val_loader, maxEpisodeLen, len(a2i), len(t2i), maxAct, len(v2i)
 
 
@@ -240,16 +239,14 @@ def train_epoch(
 
     # iterate over each batch in the dataloader
     # NOTE: you may have additional outputs from the loader __getitem__, you can modify this
-    for (inputs, labels) in loader:  # ~158
+    for (inputs, labels) in loader:
         # put model inputs to device
         inputs, labels = inputs.to(device), labels.to(device)
 
         # calculate the loss and train accuracy and perform backprop
         # NOTE: feel free to change the parameters to the model forward pass here + outputs
-        actOut, tarOut = model(inputs, labels)  # fixme
+        actOut, tarOut = model(inputs, labels)
 
-        # print(actOut.shape)
-        # print(labels[:,0]. shape)
         actLoss = criterion(actOut.squeeze(), labels[:, 0].long())
         tarLoss = criterion(tarOut.squeeze(), labels[:, 1].long())
         loss = actLoss + tarLoss
@@ -261,7 +258,7 @@ def train_epoch(
             optimizer.step()
             acc = 0
             epoch_acc = 0
-        else:  # only for validation fixme back to else
+        else:  # only for validation
             """
             # TODO: implement code to compute some other metrics between your predicted sequence
             # of (action, target) labels vs the ground truth sequence. We already provide 
