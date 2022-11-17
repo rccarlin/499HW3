@@ -4,6 +4,10 @@ import torch.nn as nn
 import numpy as np
 import torch
 
+# based off this: https://github.com/lkulowski/LSTM_encoder_decoder/blob/master/code/lstm_encoder_decoder.py
+# because I have no clue how to code this and every place I've looked gave something different to decoder
+# and I'm losing my mind
+
 class Encoder(nn.Module):
     """
     Encode a sequence of tokens. Run the input sequence
@@ -18,8 +22,9 @@ class Encoder(nn.Module):
 
     def forward(self, x, start):  # originally had , start, goal
         embeds = self.embedding(x)
+        # allOut, hid = self.lstm(x.view(x.shape[0], x.shape[1], self.inDim))
         allOut, hid = self.lstm(embeds)
-        return hid  # fixme make sure we don't need to do a max?
+        return allOut, hid
 
 
 
@@ -39,16 +44,15 @@ class Decoder(nn.Module):
         self.vocabSize = vocabSize
         self.embedDim = embedDim
 
-    def forward(self, x, start):
+    def forward(self, x, start, encOut):
         embeds = self.embedding(x)
         allOut, hid = self.lstm(embeds, start)
-        alignment = torch.softmax(torch.matmul(allOut, start.t()), dim=-1)
-        context = torch.matmul(alignment, start)
-        # fixme I did a dot product attention method since I couldn't figure out how to do the attention with weights
-        #  and technically the instructions did not tell me which to use
-        return hid
-    # and here inlines the the issue: I did-- or tried to-- all this math for attention but I don't actually use it
-    #
+        temp = torch.matmul(allOut, torch.transpose(encOut, 1, 2))
+        alignment = torch.softmax(temp, dim=-1)
+        context = torch.matmul(alignment, encOut)
+        allOut = torch.concat([context.squeeze(1), allOut.squeeze(1)],1)
+        return allOut, hid
+
 
 
 
@@ -63,38 +67,56 @@ class EncoderDecoder(nn.Module):
         self.hidDim = hidDim
         self.encoder = Encoder(hidDim, embedDim, numWords)
         self.decoder = Decoder(hidDim, embedDim, numAct + numTar)
-        self.actFCL = nn.Linear(hidDim, numAct)
-        self.tarFCL = nn.Linear(hidDim, numTar)
+        self.actFCL = nn.Linear(2 * (numAct + numTar), numAct)  # FIXME what dimensions
+        self.tarFCL = nn.Linear(2 * (numAct + numTar), numTar)
+        self.flatten = nn.Linear(hidDim, 1)
         self.numPred = numPred
         self.numAct = numAct
         self.numTar = numTar
         self.embedDim = embedDim
 
-    def forward(self, ins, outs):  # is given one batch
+    def forward(self, ins, outs, teacherForcing=True):  # is given one batch
 
         numEp = len(ins)  # hopefully this will tell me the current batch size
         actions = torch.zeros((numEp, self.numAct, self.numPred))
         targets = torch.zeros((numEp, self.numTar, self.numPred))
         initialEnc = (np.zeros((numEp, self.hidDim)), np.zeros((numEp, self.hidDim)))
-        hidEnc = self.encoder(ins, initialEnc)
+        encOut, hidEnc = self.encoder(ins, initialEnc)
+        # encOut = self.flatten(encOut).squeeze()  # why did this happen
 
         hidDec = hidEnc
+        inDec = torch.zeros(((numEp,self.numAct + self.numTar))).int()
         for p in range(self.numPred):
-            tempact = self.actFCL(hidDec[0])
-            tempTar = self.tarFCL(hidDec[0])
+            out, hidDec = self.decoder(inDec, hidDec, encOut)
+            out = self.flatten(out).squeeze()
+            tempact = self.actFCL(out)
+            tempTar = self.tarFCL(out)
             actions[:, :, p] = tempact
             targets[:, :, p] = tempTar
 
-            # make one hot
-            oneHotOut = np.zeros((numEp,94))  # 94 is numAct + numTar... I hope
-            i = 0
-            for o in outs[:,:,p]:
-                oneHotAct = [0 for a in range(self.numAct)]
-                oneHotTar = [0 for t in range(self.numTar)]
-                oneHotAct[o[0]] = 1
-                oneHotTar[o[1]] = 1
-                oneHotOut[i] = oneHotAct + oneHotTar
-                i += 1
-            hidDec = self.decoder(torch.from_numpy(oneHotOut).int(), hidDec)
+            # make one hot for teacher forcing
+            oneHotOut = np.zeros((numEp,self.numAct + self.numTar))  # 94 is numAct + numTar... I hope
+            if teacherForcing:
+                i = 0
+                for o in outs[:,:,p]:
+                    oneHotAct = [0 for a in range(self.numAct)]
+                    oneHotTar = [0 for t in range(self.numTar)]
+                    oneHotAct[o[0]] = 1
+                    oneHotTar[o[1]] = 1
+                    oneHotOut[i] = oneHotAct + oneHotTar
+                    i += 1
+            else:  # student forcing
+                predAct = torch.argmax(tempact, dim=1)
+                predTar = torch.argmax(tempTar, dim=1)
+                for i in range(numEp):
+                    oneHotAct = [0 for a in range(self.numAct)]
+                    oneHotTar = [0 for t in range(self.numTar)]
+
+                    oneHotAct[predAct[i]] = 1
+                    oneHotTar[predTar[i]] = 1
+                    oneHotOut[i] = oneHotAct + oneHotTar
+
+            inDec = torch.from_numpy(oneHotOut).int()
+
 
         return actions, targets

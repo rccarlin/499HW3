@@ -4,9 +4,7 @@ import torch.nn as nn
 import numpy as np
 import torch
 
-# based off this: https://github.com/lkulowski/LSTM_encoder_decoder/blob/master/code/lstm_encoder_decoder.py
-# because I have no clue how to code this and every place I've looked gave something different to decoder
-# and I'm losing my mind
+# guided by: https://github.com/lkulowski/LSTM_encoder_decoder/blob/master/code/lstm_encoder_decoder.py
 
 class Encoder(nn.Module):
     """
@@ -47,7 +45,7 @@ class Decoder(nn.Module):
     def forward(self, x, start):
         # print(self.vocabSize, self.embedDim)
         embeds = self.embedding(x)
-        allOut, hid = self.lstm(embeds, start)  # fixme, not sure If I need the squeeze
+        allOut, hid = self.lstm(embeds, start)
 
         return allOut, hid
 
@@ -64,8 +62,8 @@ class EncoderDecoder(nn.Module):
         self.hidDim = hidDim
         self.encoder = Encoder(hidDim, embedDim, numWords)
         self.decoder = Decoder(hidDim, embedDim, numAct + numTar)
-        self.actFCL = nn.Linear(94, numAct)  # FIXME what dimensions
-        self.tarFCL = nn.Linear(94, numTar)
+        self.actFCL = nn.Linear(numAct + numTar, numAct)  # FIXME what dimensions
+        self.tarFCL = nn.Linear(numAct + numTar, numTar)
         self.flatten = nn.Linear(hidDim, 1)
         self.numPred = numPred
         self.numAct = numAct
@@ -79,11 +77,9 @@ class EncoderDecoder(nn.Module):
         targets = torch.zeros((numEp, self.numTar, self.numPred))
         initialEnc = (np.zeros((numEp, self.hidDim)), np.zeros((numEp, self.hidDim)))
         hidEnc = self.encoder(ins, initialEnc)
-        #torch.set_printoptions(profile="full")
 
-        # hidEnc = self.encoder(ins)[0]  # fixme is this the one I want?
-        hidDec = hidEnc  # fixme is this what I want I can't even tell
-        inDec = torch.zeros(((numEp,94))).int()
+        hidDec = hidEnc
+        inDec = torch.zeros(((numEp, self.numAct + self.numTar))).int()
         for p in range(self.numPred):
             out, hidDec = self.decoder(inDec, hidDec)
             out = self.flatten(out).squeeze()
@@ -92,17 +88,28 @@ class EncoderDecoder(nn.Module):
             actions[:, :, p] = tempact
             targets[:, :, p] = tempTar
 
-            # make one hot for teacher forcing
-            oneHotOut = np.zeros((numEp,94))  # 94 is numAct + numTar... I hope
-            i = 0
-            for o in outs[:,:,p]:
-                oneHotAct = [0 for a in range(self.numAct)]
-                oneHotTar = [0 for t in range(self.numTar)]
-                oneHotAct[o[0]] = 1
-                oneHotTar[o[1]] = 1
-                oneHotOut[i] = oneHotAct + oneHotTar
-                i += 1
-            inDec = torch.from_numpy(oneHotOut).int()
+            oneHotOut = np.zeros((numEp, self.numAct + self.numTar))  # 94 is numAct + numTar... I hope
+            if teacherForcing:
+                # make one hot for teacher forcing
+                i = 0
+                for o in outs[:,:,p]:
+                    oneHotAct = [0 for a in range(self.numAct)]
+                    oneHotTar = [0 for t in range(self.numTar)]
+                    oneHotAct[o[0]] = 1
+                    oneHotTar[o[1]] = 1
+                    oneHotOut[i] = oneHotAct + oneHotTar
+                    i += 1
+            else:  # student forcing
+                predAct = torch.argmax(tempact, dim=1)
+                predTar = torch.argmax(tempTar, dim=1)
+                for i in range(numEp):
+                    oneHotAct = [0 for a in range(self.numAct)]
+                    oneHotTar = [0 for t in range(self.numTar)]
 
+                    oneHotAct[predAct[i]] = 1
+                    oneHotTar[predTar[i]] = 1
+                    oneHotOut[i] = oneHotAct + oneHotTar
+
+            inDec = torch.from_numpy(oneHotOut).int()
 
         return actions, targets

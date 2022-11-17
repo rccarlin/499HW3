@@ -16,6 +16,7 @@ from utils import (
 )
 
 import model as md
+import model_attn as mda
 
 
 def setup_dataloader(args):
